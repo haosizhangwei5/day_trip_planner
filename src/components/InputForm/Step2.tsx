@@ -106,6 +106,38 @@ export function Step2({ data, onChange, onNext, onBack }: Props) {
         </div>
       )}
 
+      {/* Surprise mode toggle */}
+      <div className={`rounded-2xl border-2 p-4 transition-colors ${
+        data.isSurpriseMode ? 'border-purple-300 bg-purple-50' : 'border-gray-200 bg-white'
+      }`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">🎲</span>
+            <span className="text-sm font-semibold text-[#1a2744]">サプライズモードで計画する</span>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={data.isSurpriseMode}
+            onClick={() => onChange({ isSurpriseMode: !data.isSurpriseMode })}
+            className={`relative w-12 h-7 rounded-full transition-colors ${
+              data.isSurpriseMode ? 'bg-purple-500' : 'bg-gray-300'
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform ${
+                data.isSurpriseMode ? 'translate-x-5' : 'translate-x-0.5'
+              }`}
+            />
+          </button>
+        </div>
+        {data.isSurpriseMode && (
+          <p className="text-xs text-purple-600 mt-2 leading-relaxed">
+            行き先はすべてお楽しみ！移動を始めるタイミングで次の目的地が明かされます 🎉
+          </p>
+        )}
+      </div>
+
       {/* Children ages (family only) */}
       {data.companionType === 'family' && (
         <div className="space-y-3">

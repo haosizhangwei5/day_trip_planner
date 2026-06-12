@@ -19,6 +19,7 @@ export interface FormData {
   budget: { food: number; transport: number; admission: number };
   dislikedFoods: string[];
   allergies: string[];
+  isSurpriseMode: boolean;
 }
 
 export interface Spot {
@@ -35,6 +36,8 @@ export interface Spot {
   allergyDetail?: string;
   description: string;
   trendReason: string;
+  areaLabel?: string;
+  hint?: string;
   alternative?: {
     name: string;
     estimatedCost: { food: number; transport: number; admission: number };
@@ -48,3 +51,44 @@ export interface Plan {
   budgetOver: boolean;
   spots: Spot[];
 }
+
+// ===== Phase 2 =====
+
+export type WeatherCondition = 'sunny' | 'cloudy' | 'rainy' | 'snowy' | 'stormy';
+
+export interface WeatherInfo {
+  date: string;
+  weatherCode: number;
+  weatherLabel: string;
+  maxTemp: number;
+  precipitationProb: number;
+  windSpeed: number;
+  condition: WeatherCondition;
+}
+
+export interface SpotSelection {
+  spotId: string;
+  useAlternative: boolean;
+}
+
+export interface SpotWithReveal extends Spot {
+  revealAt: string;
+  isRevealed: boolean;
+}
+
+export interface PlanState {
+  plan: Plan | null;
+  weather: WeatherInfo | null;
+  isSurpriseMode: boolean;
+  revealedSpotIds: string[];
+  alternativeSelections: SpotSelection[];
+}
+
+export type PlanAction =
+  | { type: 'SET_PLAN'; plan: Plan; isSurpriseMode: boolean }
+  | { type: 'ADJUST_STAY_DURATION'; spotId: string; deltaMinutes: number }
+  | { type: 'TOGGLE_ALTERNATIVE'; spotId: string }
+  | { type: 'REVEAL_SPOT'; spotId: string }
+  | { type: 'REVEAL_ALL' }
+  | { type: 'SET_WEATHER'; weather: WeatherInfo | null }
+  | { type: 'RESET' };

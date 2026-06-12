@@ -1,16 +1,27 @@
 import { useState } from 'react';
-import type { FormData, Plan } from '../types';
+import type { FormData, Plan, WeatherInfo } from '../types';
+import { buildWeatherDirective } from '../utils/weatherRules';
 
 const SYSTEM_PROMPT = `日帰り旅行プランナー。JSONのみ返す。web_searchで「[地域] おすすめスポット 2025」を検索してからプランを作る。
 
-ルール:移動時間は距離から推定(Google Maps×1.05倍)。滞在時間基準:食事60分,温泉120分,映画180分,ショッピング180分。苦手食材の専門店は除外。アレルギー注意店にallergyNote:true。10歳未満の子がいれば絶叫系除外。予算超過時はalternativeを付ける。
+ルール:移動時間は距離から推定(Google Maps×1.05倍)。滞在時間基準:食事60分,温泉120分,映画180分,ショッピング180分。苦手食材の専門店は除外。アレルギー注意店にallergyNote:true。10歳未満の子がいれば絶叫系除外。予算超過時はalternativeを付ける。代替案は元スポットと同じエリア・同じ時間帯で成立するもの（移動時間が大きく変わらないこと）。同カテゴリまたは同テーマを満たす別カテゴリでもよい。
 
 出力JSON:
-{"planTitle":"","totalBudgetEstimate":{"food":0,"transport":0,"admission":0},"budgetOver":false,"spots":[{"id":"spot_1","name":"","category":"food|shopping|onsen|movie|sports|sightseeing|other","address":"","arrivalTime":"HH:MM","departureTime":"HH:MM","stayDuration":60,"travelTimeToNext":20,"estimatedCost":{"food":0,"transport":0,"admission":0},"allergyNote":false,"allergyDetail":"","description":"","trendReason":"","alternative":{"name":"","estimatedCost":{"food":0,"transport":0,"admission":0},"description":""}}]}`;
+{"planTitle":"","totalBudgetEstimate":{"food":0,"transport":0,"admission":0},"budgetOver":false,"spots":[{"id":"spot_1","name":"","category":"food|shopping|onsen|movie|sports|sightseeing|other","address":"","arrivalTime":"HH:MM","departureTime":"HH:MM","stayDuration":60,"travelTimeToNext":20,"estimatedCost":{"food":0,"transport":0,"admission":0},"allergyNote":false,"allergyDetail":"","description":"","trendReason":"","areaLabel":"","hint":"","alternative":{"name":"","estimatedCost":{"food":0,"transport":0,"admission":0},"description":""}}]}`;
 
-function buildUserPrompt(data: FormData): string {
+const SURPRISE_DIRECTIVE = `
+※これはサプライズモードのプランです。各スポットの情報はすべて通常通り生成してください（表示の制御はアプリ側で行います）。ただし各スポットに必ず以下を含めてください:
+- "areaLabel": 市区町村レベルのエリア名（例:「渋谷エリア」「箱根エリア」）
+- "hint": スポット名を伏せたワクワクするヒント文1文。店名・施設名は絶対に含めない（例:「地元で行列ができる人気ラーメン店です」）`;
+
+function buildUserPrompt(data: FormData, weather: WeatherInfo | null): string {
   const transportLabel = { car: '車', public: '公共交通機関+徒歩', bicycle: '自転車' }[data.transport];
   const companionLabel = { solo: '一人', friends: '友達', couple: '恋人', family: '家族' }[data.companionType];
+
+  const weatherContext = weather
+    ? `【当日の天気予報】${weather.weatherLabel} / 最高${weather.maxTemp}℃ / 降水確率${weather.precipitationProb}% / 最大風速${weather.windSpeed}m/s
+${buildWeatherDirective(weather)}`
+    : '';
 
   return `
 【出発地】${data.startLocation}
@@ -24,6 +35,8 @@ ${data.hasYoungChild ? '※10歳未満の子どもがいます' : ''}
 【予算】食費 ¥${data.budget.food} / 交通費 ¥${data.budget.transport} / 入場料 ¥${data.budget.admission}（グループ合計）
 ${data.dislikedFoods.length > 0 ? `【苦手な食べ物】${data.dislikedFoods.join('、')}` : ''}
 ${data.allergies.length > 0 ? `【アレルギー】${data.allergies.join('、')}` : ''}
+${weatherContext}
+${data.isSurpriseMode ? SURPRISE_DIRECTIVE : ''}
 
 上記の条件でお出かけプランを生成してください。
 まず出発地周辺の話題スポットをweb_searchで検索してから計画してください。
@@ -46,7 +59,7 @@ export function usePlanGenerator() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function generate(formData: FormData) {
+  async function generate(formData: FormData, weather: WeatherInfo | null = null): Promise<Plan | null> {
     setLoading(true);
     setError(null);
     setPlan(null);
@@ -55,7 +68,7 @@ export function usePlanGenerator() {
     if (!apiKey) {
       setError('Anthropic APIキーが設定されていません。.envファイルを確認してください。');
       setLoading(false);
-      return;
+      return null;
     }
 
     try {
@@ -72,7 +85,7 @@ export function usePlanGenerator() {
           max_tokens: 8000,
           tools: [{ type: 'web_search_20250305', name: 'web_search' }],
           system: SYSTEM_PROMPT,
-          messages: [{ role: 'user', content: buildUserPrompt(formData) }],
+          messages: [{ role: 'user', content: buildUserPrompt(formData, weather) }],
         }),
       });
 
@@ -107,9 +120,11 @@ export function usePlanGenerator() {
         throw new Error('プランのJSONパースに失敗しました。もう一度試してください。');
       }
       setPlan(parsed);
+      return parsed;
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'プランの生成に失敗しました';
       setError(msg);
+      return null;
     } finally {
       setLoading(false);
     }

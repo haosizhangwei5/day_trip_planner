@@ -1,4 +1,4 @@
-import type { Spot } from '../types';
+import type { Spot, SpotWithReveal } from '../types';
 
 export function timeToMinutes(time: string): number {
   const [h, m] = time.split(':').map(Number);
@@ -11,6 +11,14 @@ export function minutesToTime(minutes: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
+/** プランの日付を基準に "HH:MM" を Date に変換する（単純な文字列比較を避けるため） */
+export function parseTime(time: string, baseDate: string): Date {
+  const [h, m] = time.split(':').map(Number);
+  const d = new Date(`${baseDate}T00:00:00`);
+  d.setHours(h, m, 0, 0);
+  return d;
+}
+
 export function recalculateTimes(spots: Spot[], changedIndex: number): Spot[] {
   const updated = [...spots];
   for (let i = changedIndex; i < updated.length; i++) {
@@ -19,7 +27,10 @@ export function recalculateTimes(spots: Spot[], changedIndex: number): Spot[] {
       // arrival stays the same, recalc departure
       const arrivalMins = timeToMinutes(spot.arrivalTime);
       spot.departureTime = minutesToTime(arrivalMins + spot.stayDuration);
-    } else if (i > changedIndex) {
+    } else if (i === changedIndex && i === 0) {
+      const arrivalMins = timeToMinutes(spot.arrivalTime);
+      spot.departureTime = minutesToTime(arrivalMins + spot.stayDuration);
+    } else {
       const prev = updated[i - 1];
       const prevDepartureMins = timeToMinutes(prev.departureTime);
       const arrivalMins = prevDepartureMins + prev.travelTimeToNext;
@@ -59,4 +70,42 @@ export function totalBudget(spots: Spot[]): { food: number; transport: number; a
     }),
     { food: 0, transport: 0, admission: 0 }
   );
+}
+
+// ===== Phase 2: サプライズモード =====
+
+/**
+ * スポットの公開時刻を計算する。
+ * revealAt = max(到着時刻 - 30分, 前スポットの出発時刻)
+ * 移動が30分未満の近場でも公開前に到着してしまわないようにする。
+ */
+export function calcRevealTime(arrivalTime: string, prevDepartureTime: string): string {
+  const thirtyBefore = timeToMinutes(arrivalTime) - 30;
+  const prevDep = timeToMinutes(prevDepartureTime);
+  return minutesToTime(Math.max(thirtyBefore, prevDep));
+}
+
+/**
+ * 全スポットの revealAt を計算する。
+ * 最初のスポットはプラン開始時刻を「前スポット出発時刻」として扱う。
+ */
+export function calcAllRevealTimes(spots: Spot[], planStartTime: string): string[] {
+  return spots.map((spot, i) => {
+    const prevDeparture = i === 0 ? planStartTime : spots[i - 1].departureTime;
+    return calcRevealTime(spot.arrivalTime, prevDeparture);
+  });
+}
+
+/** Spot[] を revealAt / isRevealed 付きに変換する */
+export function withRevealTimes(
+  spots: Spot[],
+  planStartTime: string,
+  revealedSpotIds: string[]
+): SpotWithReveal[] {
+  const revealTimes = calcAllRevealTimes(spots, planStartTime);
+  return spots.map((spot, i) => ({
+    ...spot,
+    revealAt: revealTimes[i],
+    isRevealed: revealedSpotIds.includes(spot.id),
+  }));
 }

@@ -7,7 +7,11 @@ import { Step2 } from './components/InputForm/Step2';
 import { Step3 } from './components/InputForm/Step3';
 import { Step4 } from './components/InputForm/Step4';
 import { PlanTimeline } from './components/PlanTimeline/PlanTimeline';
+import { WeatherBanner } from './components/WeatherBanner/WeatherBanner';
 import { usePlanGenerator } from './hooks/usePlanGenerator';
+import { usePlanState } from './hooks/usePlanState';
+import { useWeather } from './hooks/useWeather';
+import { requestNotifyPermission } from './hooks/useSurpriseReveal';
 
 const STORAGE_KEY = 'day-trip-planner-form';
 
@@ -26,6 +30,7 @@ const defaultFormData: FormData = {
   budget: { food: 3000, transport: 1000, admission: 2000 },
   dislikedFoods: [],
   allergies: [],
+  isSurpriseMode: false,
 };
 
 const stepLabels = ['基本設定', 'メンバー', 'テーマ', '食の制限'];
@@ -45,6 +50,21 @@ export default function App() {
   const { plan, setPlan, loading, error, generate } = usePlanGenerator();
   const [showPlan, setShowPlan] = useState(false);
 
+  // Phase 2: プラン状態（useReducer + localStorage永続化）
+  const { state: planState, dispatch } = usePlanState();
+
+  // Phase 2: 天気予報の自動取得（debounce付き）
+  const { weather, loading: weatherLoading, failed: weatherFailed } = useWeather({
+    date: formData.date,
+    startLocation: formData.startLocation,
+    lat: formData.startLocationCoords?.lat,
+    lng: formData.startLocationCoords?.lng,
+  });
+
+  useEffect(() => {
+    dispatch({ type: 'SET_WEATHER', weather });
+  }, [weather, dispatch]);
+
   // Auto-save form to localStorage
   useEffect(() => {
     try {
@@ -61,28 +81,37 @@ export default function App() {
     return () => clearInterval(interval);
   }, [loading]);
 
-  // Show plan when ready
+  // サプライズモードON時に一度だけ通知許可をリクエスト
   useEffect(() => {
-    if (plan) setShowPlan(true);
-  }, [plan]);
+    if (formData.isSurpriseMode) requestNotifyPermission();
+  }, [formData.isSurpriseMode]);
 
   const updateForm = useCallback((partial: Partial<FormData>) => {
     setFormData((prev) => ({ ...prev, ...partial }));
   }, []);
 
-  function handleSubmit() {
-    generate(formData);
+  async function handleSubmit() {
+    const result = await generate(formData, weather);
+    if (result) {
+      dispatch({ type: 'SET_PLAN', plan: result, isSurpriseMode: formData.isSurpriseMode });
+      setShowPlan(true);
+    }
   }
 
-  function handleRegenerate() {
+  async function handleRegenerate() {
     setShowPlan(false);
     setPlan(null);
-    generate(formData);
+    const result = await generate(formData, planState.weather);
+    if (result) {
+      dispatch({ type: 'SET_PLAN', plan: result, isSurpriseMode: formData.isSurpriseMode });
+      setShowPlan(true);
+    }
   }
 
   function handleReset() {
     setShowPlan(false);
     setPlan(null);
+    dispatch({ type: 'RESET' });
     setStep(1);
   }
 
@@ -100,14 +129,17 @@ export default function App() {
     );
   }
 
-  // Plan view
-  if (showPlan && plan) {
+  // Plan view（リロード後も planState.plan から復元できる）
+  const activePlan = (showPlan && plan) || planState.plan;
+  if (activePlan && (showPlan || planState.plan)) {
     return (
       <div className="min-h-screen bg-[#fef9f0] flex flex-col">
         <AppHeader minimal />
         <div className="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
           <PlanTimeline
-            plan={plan}
+            state={planState}
+            dispatch={dispatch}
+            plan={activePlan}
             formData={formData}
             onRegenerate={handleRegenerate}
             onReset={handleReset}
@@ -123,6 +155,11 @@ export default function App() {
       <AppHeader />
       <div className="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
         <StepIndicator current={step} total={4} labels={stepLabels} />
+
+        {/* Step1完了後（=日付・出発地が入っている間）は常に天気バナーを表示 */}
+        {(step > 1 || (formData.date && formData.startLocation)) && (
+          <WeatherBanner weather={weather} loading={weatherLoading} failed={weatherFailed} />
+        )}
 
         {error && (
           <div className="mb-4 bg-red-50 border border-red-200 rounded-2xl p-4">

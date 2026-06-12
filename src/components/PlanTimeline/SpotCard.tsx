@@ -1,16 +1,16 @@
-import { useState } from 'react';
 import type { Spot, SpotCategory } from '../../types';
 import { formatDuration } from '../../utils/timeCalc';
+import { AlternativeToggle } from '../AlternativeToggle/AlternativeToggle';
 
 interface Props {
   spot: Spot;
-  budget: FormData['budget'];
+  useAlternative: boolean;
+  onToggleAlternative: () => void;
   onAdjust: (delta: number) => void;
   isOverTime: boolean;
+  isBudgetOver: boolean;
+  justRevealed?: boolean;
 }
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-import type { FormData } from '../../types';
 
 const categoryIcon: Record<SpotCategory, string> = {
   food: '🍽️',
@@ -37,24 +37,37 @@ function formatYen(n: number) {
   return `¥${n.toLocaleString('ja-JP')}`;
 }
 
-export function SpotCard({ spot, onAdjust, isOverTime }: Props) {
-  const [altExpanded, setAltExpanded] = useState(false);
+export function SpotCard({ spot, useAlternative, onToggleAlternative, onAdjust, isOverTime, isBudgetOver, justRevealed }: Props) {
+  // 代替案採用時は名前・説明・費用を差し替える（時刻・カテゴリは維持）
+  const displayName = useAlternative && spot.alternative ? spot.alternative.name : spot.name;
+  const displayDescription = useAlternative && spot.alternative ? spot.alternative.description : spot.description;
+  const displayCost = useAlternative && spot.alternative ? spot.alternative.estimatedCost : spot.estimatedCost;
 
-  const totalCost = (spot.estimatedCost.food ?? 0) + (spot.estimatedCost.transport ?? 0) + (spot.estimatedCost.admission ?? 0);
+  const totalCost = (displayCost.food ?? 0) + (displayCost.transport ?? 0) + (displayCost.admission ?? 0);
 
   return (
     <div
       className={`bg-white rounded-2xl shadow-sm border ${
         isOverTime ? 'border-red-300' : 'border-orange-100'
-      } overflow-hidden transition-colors`}
+      } overflow-hidden transition-colors ${justRevealed ? 'flip-reveal' : ''}`}
     >
       {/* Header */}
       <div className="bg-gradient-to-r from-[#1a2744] to-[#243460] px-4 py-3 flex items-center gap-3">
         <span className="text-2xl">{categoryIcon[spot.category]}</span>
         <div className="flex-1 min-w-0">
-          <h3 className="font-bold text-white text-base leading-tight truncate">{spot.name}</h3>
+          <h3 className="font-bold text-white text-base leading-tight truncate">{displayName}</h3>
           <p className="text-blue-200 text-xs">{categoryLabel[spot.category]}</p>
         </div>
+        {justRevealed && (
+          <span className="badge-pop bg-purple-400 text-white text-xs px-2 py-0.5 rounded-full font-bold whitespace-nowrap">
+            🎉 公開！
+          </span>
+        )}
+        {useAlternative && (
+          <span className="bg-green-400 text-white text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
+            ✅ 代替案採用中
+          </span>
+        )}
         {spot.allergyNote && (
           <span title={spot.allergyDetail} className="bg-red-400 text-white text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
             ⚠️ アレルギー注意
@@ -88,16 +101,18 @@ export function SpotCard({ spot, onAdjust, isOverTime }: Props) {
         </div>
 
         {/* Address */}
-        <p className="text-xs text-gray-400 flex items-start gap-1">
-          <span>📍</span>
-          <span>{spot.address}</span>
-        </p>
+        {!useAlternative && (
+          <p className="text-xs text-gray-400 flex items-start gap-1">
+            <span>📍</span>
+            <span>{spot.address}</span>
+          </p>
+        )}
 
         {/* Description */}
-        <p className="text-sm text-gray-700 leading-relaxed">{spot.description}</p>
+        <p className="text-sm text-gray-700 leading-relaxed">{displayDescription}</p>
 
-        {/* Trend reason */}
-        {spot.trendReason && (
+        {/* Trend reason (original only) */}
+        {!useAlternative && spot.trendReason && (
           <div className="bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
             <p className="text-xs text-amber-700 leading-relaxed">
               <span className="font-semibold">✨ 話題の理由：</span>{spot.trendReason}
@@ -117,9 +132,9 @@ export function SpotCard({ spot, onAdjust, isOverTime }: Props) {
         {/* Cost */}
         <div className="grid grid-cols-3 gap-2 border-t border-gray-100 pt-3">
           {[
-            { label: '食費', value: spot.estimatedCost.food, icon: '🍽️' },
-            { label: '交通費', value: spot.estimatedCost.transport, icon: '🚃' },
-            { label: '入場料', value: spot.estimatedCost.admission, icon: '🎟️' },
+            { label: '食費', value: displayCost.food, icon: '🍽️' },
+            { label: '交通費', value: displayCost.transport, icon: '🚃' },
+            { label: '入場料', value: displayCost.admission, icon: '🎟️' },
           ].map((c) => (
             <div key={c.label} className="text-center">
               <p className="text-xs text-gray-400">{c.icon} {c.label}</p>
@@ -134,30 +149,13 @@ export function SpotCard({ spot, onAdjust, isOverTime }: Props) {
           </p>
         )}
 
-        {/* Alternative */}
-        {spot.alternative && (
-          <div className="border-t border-gray-100 pt-3">
-            <button
-              type="button"
-              onClick={() => setAltExpanded((v) => !v)}
-              className="flex items-center gap-2 text-sm text-orange-500 font-medium hover:text-orange-600 transition-colors"
-            >
-              <span className="bg-orange-100 text-orange-600 text-xs px-2 py-0.5 rounded-full">代替案あり</span>
-              <span>{altExpanded ? '▲ 閉じる' : '▼ 代替案を見る'}</span>
-            </button>
-            {altExpanded && (
-              <div className="mt-2 bg-orange-50 border border-orange-200 rounded-xl p-3 space-y-1">
-                <p className="font-bold text-sm text-orange-700">代替案: {spot.alternative.name}</p>
-                <p className="text-xs text-gray-600">{spot.alternative.description}</p>
-                <div className="flex gap-4 text-xs text-gray-500 mt-1">
-                  {spot.alternative.estimatedCost.food > 0 && <span>🍽️ ¥{spot.alternative.estimatedCost.food.toLocaleString()}</span>}
-                  {spot.alternative.estimatedCost.transport > 0 && <span>🚃 ¥{spot.alternative.estimatedCost.transport.toLocaleString()}</span>}
-                  {spot.alternative.estimatedCost.admission > 0 && <span>🎟️ ¥{spot.alternative.estimatedCost.admission.toLocaleString()}</span>}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+        {/* Alternative toggle */}
+        <AlternativeToggle
+          spot={spot}
+          useAlternative={useAlternative}
+          isBudgetOver={isBudgetOver}
+          onToggle={onToggleAlternative}
+        />
       </div>
     </div>
   );
